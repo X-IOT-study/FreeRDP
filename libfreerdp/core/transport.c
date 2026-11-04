@@ -2211,6 +2211,19 @@ static long transport_layer_bio_ctrl(BIO* bio, int cmd, long arg1, void* arg2)
 			status = -1;
 			break;
 
+#if defined(BIO_CTRL_GET_KTLS_SEND) && defined(BIO_CTRL_GET_KTLS_RECV)
+		case BIO_CTRL_GET_KTLS_SEND:
+		case BIO_CTRL_GET_KTLS_RECV:
+			/*
+			 * OpenSSL 3.x probes KTLS support on the BIO during the TLS
+			 * handshake. Returning -1 here is treated as a handshake error;
+			 * 0 correctly means "no KTLS offload". The gateway BIOs already
+			 * handle these controls the same way.
+			 */
+			status = 0;
+			break;
+#endif
+
 		default:
 			WLog_ERR(TAG, "Unsupported BIO_CTRL %d", cmd);
 			winpr_log_backtrace(TAG, WLOG_ERROR, 20);
