@@ -356,6 +356,15 @@ BOOL xf_rail_adjust_position(xfContext* xfc, xfAppWindow* appWindow)
 		    (windowMove.bottom == appWindow->lastMove.bottom))
 			return TRUE;
 
+		/* A report is in flight: hold this one until the server answers it. The window
+		 * already carries the newest geometry, so any further placement notifies collapse
+		 * into the one report sent by xf_rail_learn_frame(). */
+		if (appWindow->moveSent && !appWindow->moveAnswered)
+		{
+			appWindow->movePending = TRUE;
+			return TRUE;
+		}
+
 		const UINT rc = xfc->rail->ClientWindowMove(xfc->rail, &windowMove);
 		if (rc != CHANNEL_RC_OK)
 			return FALSE;
@@ -382,38 +391,49 @@ BOOL xf_rail_adjust_position(xfContext* xfc, xfAppWindow* appWindow)
  * The server answers a report with the window's visible rectangle, so the difference
  * between the first answer and the report is that frame. Learn it and use it for later
  * reports of the window. */
-static void xf_rail_learn_frame(xfAppWindow* appWindow)
+static void xf_rail_learn_frame(xfContext* xfc, xfAppWindow* appWindow)
 {
+	WINPR_ASSERT(xfc);
 	WINPR_ASSERT(appWindow);
 
 	if (!appWindow->moveSent || appWindow->moveAnswered)
 		return;
 	appWindow->moveAnswered = TRUE;
 
-	if (((appWindow->dwStyle & WS_THICKFRAME) != 0) || appWindow->frameKnown)
-		return;
+	if (((appWindow->dwStyle & WS_THICKFRAME) == 0) && !appWindow->frameKnown)
+	{
+		const RAIL_WINDOW_MOVE_ORDER* sent = &appWindow->lastMove;
+		const INT64 frameLeft = appWindow->windowOffsetX - sent->left;
+		const INT64 frameTop = appWindow->windowOffsetY - sent->top;
+		const INT64 frameRight =
+		    sent->right - (appWindow->windowOffsetX + (INT64)appWindow->windowWidth);
+		const INT64 frameBottom =
+		    sent->bottom - (appWindow->windowOffsetY + (INT64)appWindow->windowHeight);
 
-	const RAIL_WINDOW_MOVE_ORDER* sent = &appWindow->lastMove;
-	const INT64 frameLeft = appWindow->windowOffsetX - sent->left;
-	const INT64 frameTop = appWindow->windowOffsetY - sent->top;
-	const INT64 frameRight =
-	    sent->right - (appWindow->windowOffsetX + (INT64)appWindow->windowWidth);
-	const INT64 frameBottom =
-	    sent->bottom - (appWindow->windowOffsetY + (INT64)appWindow->windowHeight);
+		const INT64 limit = 64;
+		if ((frameLeft >= 0) && (frameTop >= 0) && (frameRight >= 0) && (frameBottom >= 0) &&
+		    (frameLeft <= limit) && (frameTop <= limit) && (frameRight <= limit) &&
+		    (frameBottom <= limit) &&
+		    ((frameLeft + frameTop + frameRight + frameBottom) != 0))
+		{
+			appWindow->frameKnown = TRUE;
+			appWindow->frameLeft = (INT32)frameLeft;
+			appWindow->frameTop = (INT32)frameTop;
+			appWindow->frameRight = (INT32)frameRight;
+			appWindow->frameBottom = (INT32)frameBottom;
+			appWindow->moveSent = FALSE;
+		}
+	}
 
-	const INT64 limit = 64;
-	if ((frameLeft < 0) || (frameTop < 0) || (frameRight < 0) || (frameBottom < 0) ||
-	    (frameLeft > limit) || (frameTop > limit) || (frameRight > limit) || (frameBottom > limit))
-		return;
-	if ((frameLeft + frameTop + frameRight + frameBottom) == 0)
-		return;
-
-	appWindow->frameKnown = TRUE;
-	appWindow->frameLeft = (INT32)frameLeft;
-	appWindow->frameTop = (INT32)frameTop;
-	appWindow->frameRight = (INT32)frameRight;
-	appWindow->frameBottom = (INT32)frameBottom;
-	appWindow->moveSent = FALSE;
+	/* A report that arrived while this one was unanswered was held back, see
+	 * xf_rail_adjust_position(). The window still carries the last of them, so report it once
+	 * now that the answer establishes the server's size and, for a window that cannot be
+	 * resized, its frame. */
+	if (appWindow->movePending)
+	{
+		appWindow->movePending = FALSE;
+		xf_rail_adjust_position(xfc, appWindow);
+	}
 }
 
 BOOL xf_rail_end_local_move(xfContext* xfc, xfAppWindow* appWindow)
@@ -797,7 +817,7 @@ static BOOL xf_rail_window_common(rdpContext* context, const WINDOW_ORDER_INFO* 
 	}
 
 	if (fieldFlags & WINDOW_ORDER_FIELD_WND_SIZE)
-		xf_rail_learn_frame(appWindow);
+		xf_rail_learn_frame(xfc, appWindow);
 
 	/* Update Window */
 

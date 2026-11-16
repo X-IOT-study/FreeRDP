@@ -1105,6 +1105,7 @@ BOOL xf_AppWindowCreate(xfContext* xfc, xfAppWindow* appWindow)
 	appWindow->sizeReported = FALSE;
 	appWindow->moveSent = FALSE;
 	appWindow->moveAnswered = FALSE;
+	appWindow->movePending = FALSE;
 	appWindow->frameKnown = FALSE;
 
 	WINPR_ASSERT(xfc->depth != 0);
@@ -1249,6 +1250,7 @@ void xf_StartLocalMoveSize(xfContext* xfc, xfAppWindow* appWindow, int direction
 	/* A new move or resize by the user: whatever it ends with is reported. */
 	appWindow->sizeReported = FALSE;
 	appWindow->moveSent = FALSE;
+	appWindow->movePending = FALSE;
 	appWindow->local_move.direction = direction;
 
 	xf_ungrab(xfc);

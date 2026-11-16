@@ -116,6 +116,9 @@ struct xf_app_window
 	/* The last Window Move PDU, see xf_rail_adjust_position(). */
 	BOOL moveSent;
 	BOOL moveAnswered;
+	/* A Window Move PDU arrived while the last one was unanswered; the window keeps the
+	 * latest rectangle, see xf_rail_learn_frame(). */
+	BOOL movePending;
 	RAIL_WINDOW_MOVE_ORDER lastMove;
 	/* Frame the server adds around a window that cannot be resized, learnt from its answer
 	 * to a Window Move PDU, see xf_rail_learn_frame(). */
