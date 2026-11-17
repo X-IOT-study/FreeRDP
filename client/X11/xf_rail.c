@@ -311,7 +311,7 @@ BOOL xf_rail_adjust_position(xfContext* xfc, xfAppWindow* appWindow)
 	if ((appWindow->dwStyle & WS_THICKFRAME) == 0)
 	{
 		/* The client cannot resize a window without a sizing frame: only its position is
-		 * reported, with the server's size, see xf_rail_learn_frame(). */
+		 * reported, with the server's size, see xf_rail_move_answered(). */
 		width = appWindow->windowWidth;
 		height = appWindow->windowHeight;
 		if (appWindow->frameKnown)
@@ -358,7 +358,7 @@ BOOL xf_rail_adjust_position(xfContext* xfc, xfAppWindow* appWindow)
 
 		/* A report is in flight: hold this one until the server answers it. The window
 		 * already carries the newest geometry, so any further placement notifies collapse
-		 * into the one report sent by xf_rail_learn_frame(). */
+		 * into the one report sent by xf_rail_move_answered(). */
 		if (appWindow->moveSent && !appWindow->moveAnswered)
 		{
 			appWindow->movePending = TRUE;
@@ -390,8 +390,13 @@ BOOL xf_rail_adjust_position(xfContext* xfc, xfAppWindow* appWindow)
  *
  * The server answers a report with the window's visible rectangle, so the difference
  * between the first answer and the report is that frame. Learn it and use it for later
- * reports of the window. */
-static void xf_rail_learn_frame(xfContext* xfc, xfAppWindow* appWindow)
+ * reports of the window.
+ *
+ * A report that keeps the server's size and only moves the window is answered with the
+ * window offset alone, so only an answer carrying a size can teach the frame. Either
+ * answer releases the report in flight. */
+static void xf_rail_move_answered(xfContext* xfc, xfAppWindow* appWindow, BOOL haveSize,
+                                  BOOL showChanged)
 {
 	WINPR_ASSERT(xfc);
 	WINPR_ASSERT(appWindow);
@@ -400,7 +405,7 @@ static void xf_rail_learn_frame(xfContext* xfc, xfAppWindow* appWindow)
 		return;
 	appWindow->moveAnswered = TRUE;
 
-	if (((appWindow->dwStyle & WS_THICKFRAME) == 0) && !appWindow->frameKnown)
+	if (haveSize && ((appWindow->dwStyle & WS_THICKFRAME) == 0) && !appWindow->frameKnown)
 	{
 		const RAIL_WINDOW_MOVE_ORDER* sent = &appWindow->lastMove;
 		const INT64 frameLeft = appWindow->windowOffsetX - sent->left;
@@ -413,8 +418,7 @@ static void xf_rail_learn_frame(xfContext* xfc, xfAppWindow* appWindow)
 		const INT64 limit = 64;
 		if ((frameLeft >= 0) && (frameTop >= 0) && (frameRight >= 0) && (frameBottom >= 0) &&
 		    (frameLeft <= limit) && (frameTop <= limit) && (frameRight <= limit) &&
-		    (frameBottom <= limit) &&
-		    ((frameLeft + frameTop + frameRight + frameBottom) != 0))
+		    (frameBottom <= limit) && ((frameLeft + frameTop + frameRight + frameBottom) != 0))
 		{
 			appWindow->frameKnown = TRUE;
 			appWindow->frameLeft = (INT32)frameLeft;
@@ -428,11 +432,13 @@ static void xf_rail_learn_frame(xfContext* xfc, xfAppWindow* appWindow)
 	/* A report that arrived while this one was unanswered was held back, see
 	 * xf_rail_adjust_position(). The window still carries the last of them, so report it once
 	 * now that the answer establishes the server's size and, for a window that cannot be
-	 * resized, its frame. */
+	 * resized, its frame. A show state change makes the server's geometry the current one; a
+	 * rectangle held from before it is stale, so drop it instead. */
 	if (appWindow->movePending)
 	{
 		appWindow->movePending = FALSE;
-		xf_rail_adjust_position(xfc, appWindow);
+		if (!showChanged)
+			xf_rail_adjust_position(xfc, appWindow);
 	}
 }
 
@@ -816,8 +822,9 @@ static BOOL xf_rail_window_common(rdpContext* context, const WINDOW_ORDER_INFO* 
 		}
 	}
 
-	if (fieldFlags & WINDOW_ORDER_FIELD_WND_SIZE)
-		xf_rail_learn_frame(xfc, appWindow);
+	if ((fieldFlags & WINDOW_ORDER_FIELD_WND_OFFSET) || (fieldFlags & WINDOW_ORDER_FIELD_WND_SIZE))
+		xf_rail_move_answered(xfc, appWindow, (fieldFlags & WINDOW_ORDER_FIELD_WND_SIZE) != 0,
+		                      (fieldFlags & WINDOW_ORDER_FIELD_SHOW) != 0);
 
 	/* Update Window */
 
