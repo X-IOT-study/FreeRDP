@@ -37,6 +37,8 @@
 
 #include <freerdp/log.h>
 
+#define TAG CLIENT_TAG("x11")
+
 WINPR_ATTR_NODISCARD
 static const char* error_code2str(UINT32 code)
 {
@@ -361,6 +363,11 @@ BOOL xf_rail_adjust_position(xfContext* xfc, xfAppWindow* appWindow)
 		 * into the one report sent by xf_rail_move_answered(). */
 		if (appWindow->moveSent && !appWindow->moveAnswered)
 		{
+			WLog_DBG(TAG,
+			         "rail move: hold windowId=0x%08" PRIx64 " left=%" PRId16 " top=%" PRId16
+			         " right=%" PRId16 " bottom=%" PRId16 " in-flight=1",
+			         appWindow->windowId, windowMove.left, windowMove.top, windowMove.right,
+			         windowMove.bottom);
 			appWindow->movePending = TRUE;
 			return TRUE;
 		}
@@ -372,6 +379,11 @@ BOOL xf_rail_adjust_position(xfContext* xfc, xfAppWindow* appWindow)
 		appWindow->moveSent = TRUE;
 		appWindow->moveAnswered = FALSE;
 		appWindow->lastMove = windowMove;
+		WLog_DBG(TAG,
+		         "rail move: send windowId=0x%08" PRIx64 " left=%" PRId16 " top=%" PRId16
+		         " right=%" PRId16 " bottom=%" PRId16 " in-flight=1",
+		         appWindow->windowId, windowMove.left, windowMove.top, windowMove.right,
+		         windowMove.bottom);
 		if (!refused)
 		{
 			appWindow->sizeReported = TRUE;
@@ -404,6 +416,9 @@ static void xf_rail_move_answered(xfContext* xfc, xfAppWindow* appWindow, BOOL h
 	if (!appWindow->moveSent || appWindow->moveAnswered)
 		return;
 	appWindow->moveAnswered = TRUE;
+	WLog_DBG(
+	    TAG, "rail move: answer windowId=0x%08" PRIx64 " size=%d moveAnswered=%d movePending=%d",
+	    appWindow->windowId, haveSize ? 1 : 0, appWindow->moveAnswered, appWindow->movePending);
 
 	if (haveSize && ((appWindow->dwStyle & WS_THICKFRAME) == 0) && !appWindow->frameKnown)
 	{
@@ -426,6 +441,11 @@ static void xf_rail_move_answered(xfContext* xfc, xfAppWindow* appWindow, BOOL h
 			appWindow->frameRight = (INT32)frameRight;
 			appWindow->frameBottom = (INT32)frameBottom;
 			appWindow->moveSent = FALSE;
+			WLog_DBG(TAG,
+			         "rail move: frame windowId=0x%08" PRIx64 " left=%" PRId32 " top=%" PRId32
+			         " right=%" PRId32 " bottom=%" PRId32,
+			         appWindow->windowId, appWindow->frameLeft, appWindow->frameTop,
+			         appWindow->frameRight, appWindow->frameBottom);
 		}
 	}
 
@@ -437,8 +457,19 @@ static void xf_rail_move_answered(xfContext* xfc, xfAppWindow* appWindow, BOOL h
 	if (appWindow->movePending)
 	{
 		appWindow->movePending = FALSE;
-		if (!showChanged)
+		if (showChanged)
+		{
+			WLog_DBG(TAG, "rail move: drop windowId=0x%08" PRIx64 " x=%d y=%d w=%d h=%d show=1",
+			         appWindow->windowId, appWindow->x, appWindow->y, appWindow->width,
+			         appWindow->height);
+		}
+		else
+		{
+			WLog_DBG(TAG, "rail move: flush windowId=0x%08" PRIx64 " x=%d y=%d w=%d h=%d",
+			         appWindow->windowId, appWindow->x, appWindow->y, appWindow->width,
+			         appWindow->height);
 			xf_rail_adjust_position(xfc, appWindow);
+		}
 	}
 }
 
